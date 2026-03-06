@@ -254,7 +254,7 @@ make_phase(delta_P = 0, delta_R = 0,
            title = expression(paste("Standard replicator (", delta, " = 0)")))
 ```
 
-All trajectories converge to (Greedy, Accept) — the subgame perfect equilibrium. The $a = 2/3$ line is the nullcline where $\dot{f} = 0$.
+The $a = 2/3$ line is the nullcline where $\dot{f} = 0$. Above it, trajectories converge to (Greedy, Accept) — the SPE. Below it, trajectories move rightward and can be absorbed onto the $f = 1$ boundary, which is a line of rest points (at $f = 1$, both $\dot{f} = 0$ and $\dot{a} = 0$). These boundary rest points are fragile — any perturbation restarts the dynamics — which motivates adding drift below.
 
 ## With Drift ($\delta > 0$)
 
@@ -478,7 +478,7 @@ ggplot(results, aes(x = rc, y = k_star, color = e_label, shape = e_label)) +
 | Simulation | Key Takeaway |
 |----|----|
 | **Stag Hunt** | The MSNE ($s = 2/3$) is the basin boundary — evolution selects *between* equilibria based on initial conditions |
-| **Mini-Ultimatum** | The SPE (Greedy, Accept) is the only attractor without drift; experimentation can stabilize fairness |
+| **Mini-Ultimatum** | The SPE (Greedy, Accept) is the only *asymptotically stable* equilibrium without drift; the $f = 1$ boundary also absorbs trajectories but is fragile. Experimentation (drift) eliminates boundary rest points and can stabilize fairness |
 | **Overconfidence** | Natural selection favors overconfidence when resources are valuable relative to conflict costs |
 
 All three simulations illustrate the same core idea: evolutionary dynamics give us a *selection criterion* among equilibria that Nash equilibrium alone cannot provide.
