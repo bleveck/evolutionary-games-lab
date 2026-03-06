@@ -1,0 +1,484 @@
+---
+title: "Evolutionary Game Theory Lab"
+subtitle: "POLI 215 — Week 7"
+author: "Brad LeVeck"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float: true
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, message = FALSE, warning = FALSE,
+  fig.width = 7, fig.height = 4, fig.align = "center"
+)
+```
+
+# Getting Started
+
+This notebook walks through three simulations from this week's lecture on evolutionary game theory. You'll build up the key functions step by step.
+
+**Packages needed:**
+
+```{r packages}
+library(ggplot2)
+library(deSolve)
+```
+
+If you don't have these, install them first:
+
+``` r
+install.packages(c("ggplot2", "deSolve"))
+```
+
+------------------------------------------------------------------------
+
+# 1. Stag Hunt: Replicator Dynamics
+
+## The Game
+
+Recall the Stag Hunt payoff matrix:
+
+|          | Stag   | Hare   |
+|----------|--------|--------|
+| **Stag** | (5, 5) | (0, 4) |
+| **Hare** | (4, 0) | (2, 2) |
+
+In a large population, let $s$ be the fraction playing Stag. The expected payoffs are:
+
+$$\text{Eu}(S) = 5s, \qquad \text{Eu}(H) = 4s + 2(1-s) = 2 + 2s.$$
+
+## The Replicator Equation
+
+The replicator equation says that the growth rate of a strategy is proportional to how much better it does than the population average:
+
+$$\dot{s} = s(1-s)[\text{Eu}(S) - \text{Eu}(H)] = s(1-s)(3s - 2).$$
+
+Let's plot $\dot{s}$ as a function of $s$:
+
+```{r stag-replicator}
+s <- seq(0, 1, length.out = 500)
+sdot <- s * (1 - s) * (3 * s - 2)
+
+df <- data.frame(s = s, sdot = sdot)
+
+ggplot(df, aes(x = s, y = sdot)) +
+  geom_hline(yintercept = 0, linewidth = 0.3, color = "grey60") +
+  geom_line(linewidth = 1, color = "#1a3a8a") +
+  # Shade basins of attraction
+  annotate("rect", xmin = 0, xmax = 2/3, ymin = -Inf, ymax = Inf,
+           fill = "#ffcccc", alpha = 0.15) +
+  annotate("rect", xmin = 2/3, xmax = 1, ymin = -Inf, ymax = Inf,
+           fill = "#ccddff", alpha = 0.15) +
+  # Fixed points
+  geom_point(data = data.frame(s = c(0, 1), sdot = c(0, 0)),
+             size = 4, shape = 16, color = "#1a3a8a") +
+  geom_point(data = data.frame(s = 2/3, sdot = 0),
+             size = 4, shape = 21, fill = "white", color = "#1a3a8a", stroke = 1.2) +
+  # Labels
+  annotate("text", x = 0.33, y = 0.18, label = "Basin of\nHare equilibrium",
+           size = 3, fontface = "italic", color = "#b33030") +
+  annotate("text", x = 0.85, y = 0.18, label = "Basin of\nStag equilibrium",
+           size = 3, fontface = "italic", color = "#1a3a8a") +
+  scale_x_continuous(breaks = c(0, 0.2, 0.4, 2/3, 0.8, 1),
+                     labels = c("0", "0.2", "0.4", "2/3", "0.8", "1")) +
+  labs(x = expression(italic(s) ~ "(fraction playing Stag)"),
+       y = expression(dot(italic(s)))) +
+  theme_minimal(base_size = 12) +
+  theme(panel.grid.minor = element_blank())
+```
+
+## Reading the Plot
+
+-   **Fixed points** are where the curve crosses zero: $s = 0$, $s = 2/3$, and $s = 1$.
+-   When $\dot{s} < 0$ (curve below zero), the Stag fraction is *shrinking*.
+-   When $\dot{s} > 0$ (curve above zero), the Stag fraction is *growing*.
+-   The filled dots are **stable** equilibria; the open dot at $s = 2/3$ is **unstable** — the MSNE from last week.
+
+## Stability via the Slope
+
+To check stability formally, expand $\dot{s} = -3s^3 + 5s^2 - 2s$ and take the derivative:
+
+$$\frac{d\dot{s}}{ds} = -9s^2 + 10s - 2.$$
+
+```{r slope-check}
+slope_at <- function(s) -9 * s^2 + 10 * s - 2
+
+data.frame(
+  fixed_point = c("s = 0", "s = 2/3", "s = 1"),
+  slope = c(slope_at(0), slope_at(2/3), slope_at(1)),
+  stable = c(slope_at(0) < 0, slope_at(2/3) < 0, slope_at(1) < 0)
+)
+```
+
+Negative slope means stable; positive means unstable. The MSNE at $s = 2/3$ has slope $+2/3$ — perturbations push *away* from it.
+
+**Exercise:** Try changing the payoffs. What happens to the basin of attraction boundary if the Stag-Stag payoff increases to 6?
+
+------------------------------------------------------------------------
+
+# 2. Mini-Ultimatum Game: Two-Population Replicator
+
+## The Game
+
+A simplified ultimatum game:
+
+-   **Proposer** offers either Fair (2, 2) or Greedy (3 for self, 1 for responder)
+-   **Responder** chooses to Accept or Reject greedy offers (rejection gives both 0)
+
+Two populations evolve separately:
+
+-   $f$ = fraction of Proposers playing Fair
+-   $a$ = fraction of Responders playing Accept
+
+## Setting Up the ODE
+
+The replicator equations for two populations are:
+
+$$\dot{f} = f(1-f)[E_P(\text{Fair}) - E_P(\text{Greedy})]$$ $$\dot{a} = a(1-a)[E_R(\text{Accept}) - E_R(\text{Reject})]$$
+
+Working out the expected payoffs:
+
+$$\dot{f} = f(1-f)[2 - 3a], \qquad \dot{a} = a(1-a)[1 - f].$$
+
+We'll add an optional **drift** parameter $\delta$ that represents random experimentation:
+
+$$\dot{f} = (1-\delta_P)\, f(1-f)(2-3a) + \delta_P(1/2 - f)$$ $$\dot{a} = (1-\delta_R)\, a(1-a)(1-f) + \delta_R(1/2 - a)$$
+
+## Key Functions
+
+First, a function to compute the arrow (vector) field over a grid:
+
+```{r arrow-field}
+arrow_field <- function(delta_P = 0, delta_R = 0, n = 15) {
+  fvals <- seq(0.05, 0.95, length.out = n)
+  avals <- seq(0.05, 0.95, length.out = n)
+  grid <- expand.grid(f = fvals, a = avals)
+
+  grid$fdot <- (1 - delta_P) * grid$f * (1 - grid$f) * (2 - 3 * grid$a) +
+    delta_P * (0.5 - grid$f)
+  grid$adot <- (1 - delta_R) * grid$a * (1 - grid$a) * (1 - grid$f) +
+    delta_R * (0.5 - grid$a)
+
+  # Normalize arrow lengths for display
+  mag <- sqrt(grid$fdot^2 + grid$adot^2)
+  scale <- 0.035 / max(mag)
+  grid$fdot_n <- grid$fdot * scale
+  grid$adot_n <- grid$adot * scale
+  grid
+}
+```
+
+Next, a function to simulate a trajectory from a given starting point using `deSolve::ode`:
+
+```{r sim-trajectory}
+sim_trajectory <- function(f0, a0, delta_P = 0, delta_R = 0,
+                           times = seq(0, 50, by = 0.1)) {
+  deriv <- function(t, state, parms) {
+    f <- state[1]; a <- state[2]
+    f <- max(1e-6, min(1 - 1e-6, f))
+    a <- max(1e-6, min(1 - 1e-6, a))
+    df <- (1 - delta_P) * f * (1 - f) * (2 - 3 * a) + delta_P * (0.5 - f)
+    da <- (1 - delta_R) * a * (1 - a) * (1 - f) + delta_R * (0.5 - a)
+    list(c(df, da))
+  }
+  out <- ode(y = c(f0, a0), times = times, func = deriv, parms = NULL,
+             method = "lsoda")
+  data.frame(f = out[, 2], a = out[, 3])
+}
+```
+
+Finally, a function that combines arrows and trajectories into a phase diagram:
+
+```{r make-phase}
+make_phase <- function(delta_P = 0, delta_R = 0, title = "") {
+  grid <- arrow_field(delta_P, delta_R, n = 17)
+
+  # Fewer trajectories so the plot isn't cluttered
+  starts <- expand.grid(f0 = c(0.1, 0.5, 0.9),
+                        a0 = c(0.1, 0.5, 0.9))
+  trajs <- do.call(rbind, lapply(seq_len(nrow(starts)), function(i) {
+    tr <- sim_trajectory(starts$f0[i], starts$a0[i], delta_P, delta_R,
+                         times = seq(0, 80, by = 0.2))
+    tr$id <- i
+    tr
+  }))
+
+  # Extract the last segment of each trajectory for an arrowhead
+  arrow_segs <- do.call(rbind, lapply(unique(trajs$id), function(i) {
+    sub <- trajs[trajs$id == i, ]
+    n <- nrow(sub)
+    data.frame(f = sub$f[n - 1], a = sub$a[n - 1],
+               fend = sub$f[n], aend = sub$a[n])
+  }))
+
+  ggplot() +
+    geom_segment(data = grid,
+                 aes(x = f, y = a, xend = f + fdot_n, yend = a + adot_n),
+                 arrow = arrow(length = unit(0.06, "cm"), type = "closed"),
+                 linewidth = 0.3, color = "grey50") +
+    geom_path(data = trajs, aes(x = f, y = a, group = id),
+              linewidth = 0.6, color = "#1a3a8a", alpha = 0.6) +
+    geom_segment(data = arrow_segs,
+                 aes(x = f, y = a, xend = fend, yend = aend),
+                 arrow = arrow(length = unit(0.15, "cm"), type = "closed"),
+                 linewidth = 0.6, color = "#1a3a8a", alpha = 0.8) +
+    # Mark starting points
+    geom_point(data = starts, aes(x = f0, y = a0),
+               size = 1.5, color = "#1a3a8a") +
+    geom_hline(yintercept = 2/3, linetype = "dashed", color = "grey40",
+               linewidth = 0.4) +
+    scale_x_continuous(limits = c(-0.02, 1.02), expand = c(0, 0),
+                       breaks = seq(0, 1, 0.2)) +
+    scale_y_continuous(limits = c(-0.02, 1.02), expand = c(0, 0),
+                       breaks = c(0, 0.2, 0.4, 2/3, 0.8, 1),
+                       labels = c("0", "0.2", "0.4", "2/3", "0.8", "1")) +
+    labs(x = expression(italic(f) ~ "(fraction Fair)"),
+         y = expression(italic(a) ~ "(fraction Accept)"),
+         title = title) +
+    coord_fixed() +
+    theme_minimal(base_size = 11) +
+    theme(panel.grid.minor = element_blank(),
+          plot.title = element_text(size = 11, face = "bold"))
+}
+```
+
+## Standard Replicator ($\delta = 0$)
+
+```{r phase-standard, fig.height=5}
+make_phase(delta_P = 0, delta_R = 0,
+           title = expression(paste("Standard replicator (", delta, " = 0)")))
+```
+
+All trajectories converge to (Greedy, Accept) — the subgame perfect equilibrium. The $a = 2/3$ line is the nullcline where $\dot{f} = 0$.
+
+## With Drift ($\delta > 0$)
+
+Now add experimentation: proposers occasionally try the "wrong" strategy ($\delta_P = 0.01$), and responders experiment more ($\delta_R = 0.10$):
+
+```{r phase-drift, fig.height=5}
+make_phase(delta_P = 0.01, delta_R = 0.10,
+           title = expression(paste("With drift (", delta[P], " = 0.01, ",
+                                    delta[R], " = 0.10)")))
+```
+
+A second attractor appears near the interior — a "fairness norm" sustained by the threat of rejection. Even a small amount of experimentation by responders can stabilize fair behavior.
+
+**Exercise:** What happens if you increase $\delta_R$ to 0.20? What about setting $\delta_P = \delta_R = 0.05$?
+
+------------------------------------------------------------------------
+
+# 3. Evolution of Overconfidence
+
+## The Model
+
+This simulation is based on a simplified version of Johnson & Fowler (2011). Two individuals compete over a resource:
+
+-   **Capabilities**: $h_i, h_j \sim N(0, 0.5)$
+-   **Perception error**: $n_i \sim N(0, e)$
+-   **Confidence bias** $k$: individual perceives own capability as $h_i + k$
+-   **Claim decision**: claim if perceived own \> perceived opponent, i.e., $h_i + k > h_j + n_i$
+-   **Payoffs**: Win conflict = $r - c$, Lose conflict = $-c$, Unclaimed resource = $r$
+
+When $k > 0$, the individual is *overconfident* — they overestimate their own ability.
+
+## Fitness Function
+
+This function computes the average fitness of an agent with bias $k_i$ competing against a population with biases $k_j$:
+
+```{r fitness-function}
+compute_fitness <- function(k_i, k_j_vec, r, c_cost, e, n_pairs = 2000) {
+  n_opp <- length(k_j_vec)
+  total_fitness <- 0
+
+  for (trial in seq_len(n_pairs)) {
+    # Draw capabilities
+    h_i <- rnorm(1, 0, sqrt(0.5))
+    j_idx <- sample(n_opp, 1)
+    k_j <- k_j_vec[j_idx]
+    h_j <- rnorm(1, 0, sqrt(0.5))
+
+    # Perception errors
+    n_i <- rnorm(1, 0, e)
+    n_j <- rnorm(1, 0, e)
+
+    # Claim decisions
+    i_claims <- (h_i + k_i) > (h_j + n_i)
+    j_claims <- (h_j + k_j) > (h_i + n_j)
+
+    if (i_claims && j_claims) {
+      # Conflict: higher actual capability wins
+      if (h_i > h_j) {
+        total_fitness <- total_fitness + (r - c_cost)
+      } else {
+        total_fitness <- total_fitness + (-c_cost)
+      }
+    } else if (i_claims && !j_claims) {
+      total_fitness <- total_fitness + r
+    }
+    # If neither claims or only j claims: i gets 0
+  }
+  total_fitness / n_pairs
+}
+```
+
+**Key things to notice:**
+
+-   The claim decision uses the *biased* perception ($h_i + k$), not true ability.
+-   Conflict outcome depends on *actual* capability ($h_i$ vs $h_j$).
+-   Overconfidence can pay off when the opponent backs down (you claim an uncontested resource), but it's costly when both claim and you lose.
+
+## Evolutionary Simulation
+
+Agents replicate proportional to fitness, with small mutations:
+
+```{r evolve-function}
+evolve_population <- function(r, c_cost, e, pop_size = 100, generations = 60,
+                               n_pairs = 500, k_init = NULL, mutation_sd = 0.1) {
+  if (is.null(k_init)) {
+    pop <- rnorm(pop_size, 0, 0.3)  # start near unbiased
+  } else {
+    pop <- k_init
+  }
+
+  history <- matrix(NA, nrow = generations, ncol = pop_size)
+  mean_k <- numeric(generations)
+
+  for (gen in seq_len(generations)) {
+    history[gen, ] <- pop
+    mean_k[gen] <- mean(pop)
+
+    # Compute fitness for each agent
+    fitness <- sapply(seq_len(pop_size), function(i) {
+      compute_fitness(pop[i], pop[-i], r, c_cost, e, n_pairs)
+    })
+
+    # Shift fitness to be positive for selection
+    fitness <- fitness - min(fitness) + 0.01
+
+    # Replicate proportional to fitness (with mutation)
+    probs <- fitness / sum(fitness)
+    parents <- sample(pop_size, pop_size, replace = TRUE, prob = probs)
+    pop <- pop[parents] + rnorm(pop_size, 0, mutation_sd)
+  }
+
+  list(history = history, mean_k = mean_k, final_pop = pop)
+}
+```
+
+**How the evolution works:**
+
+1.  Each generation, every agent plays `n_pairs` contests against random opponents.
+2.  Agents with higher fitness are more likely to be "copied" into the next generation.
+3.  Small mutations (`mutation_sd`) allow the population to explore new strategies.
+
+## Simulation 1: Population Dynamics
+
+Let's watch overconfidence evolve in a population where resources are valuable ($r/c = 2$):
+
+```{r pop-dynamics, fig.height=4}
+set.seed(42)
+
+res <- evolve_population(r = 2, c_cost = 1, e = 0.5,
+                         pop_size = 100, generations = 60,
+                         n_pairs = 500, mutation_sd = 0.08)
+
+gen_df <- data.frame(
+  generation = rep(1:60, each = 100),
+  k = as.vector(t(res$history))
+)
+
+mean_df <- data.frame(
+  generation = 1:60,
+  mean_k = res$mean_k
+)
+
+ggplot() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
+  geom_boxplot(data = gen_df[gen_df$generation %% 5 == 0, ],
+               aes(x = generation, y = k, group = generation),
+               width = 3, outlier.size = 0.5, fill = "#d0ddf0",
+               color = "#1a3a8a", alpha = 0.7) +
+  geom_line(data = mean_df, aes(x = generation, y = mean_k),
+            linewidth = 1, color = "#c04040") +
+  annotate("text", x = 55, y = res$mean_k[60] + 0.1,
+           label = expression("mean " * italic(k)),
+           size = 3.5, color = "#c04040") +
+  labs(x = "Generation",
+       y = expression(italic(k) ~ "(confidence bias)"),
+       title = expression(paste("Population dynamics: ", italic(r)/italic(c),
+                                " = 2, ", italic(e), " = 0.5"))) +
+  theme_minimal(base_size = 12) +
+  theme(panel.grid.minor = element_blank(),
+        plot.title = element_text(size = 11, face = "bold"))
+```
+
+The population starts near $k = 0$ (unbiased) and drifts toward positive $k$ — overconfidence evolves.
+
+## Simulation 2: Equilibrium Bias vs. Benefit/Cost Ratio
+
+How does the equilibrium level of overconfidence depend on the stakes ($r/c$) and perception error ($e$)?
+
+**Note:** This sweep takes about a minute to run.
+
+```{r equilibrium-sweep, cache=TRUE}
+set.seed(42)
+
+rc_vals <- seq(0.3, 2.5, by = 0.2)
+e_vals <- c(0.2, 0.5, 1.0)
+results <- data.frame()
+
+for (e in e_vals) {
+  for (rc in rc_vals) {
+    res <- evolve_population(r = rc, c_cost = 1, e = e,
+                             pop_size = 80, generations = 50,
+                             n_pairs = 400, mutation_sd = 0.05)
+    k_star <- mean(res$final_pop)
+    results <- rbind(results, data.frame(rc = rc, e = e, k_star = k_star))
+  }
+}
+
+results$e_label <- factor(paste0("e = ", results$e))
+
+ggplot(results, aes(x = rc, y = k_star, color = e_label, shape = e_label)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
+  geom_line(linewidth = 0.8) +
+  geom_point(size = 2) +
+  scale_color_manual(values = c("#1a3a8a", "#d4760a", "#2a8a3a")) +
+  labs(x = expression(italic(r) / italic(c) ~ "(benefit/cost ratio)"),
+       y = expression(italic(k) * "*" ~ "(equilibrium confidence bias)"),
+       color = "Perception\nerror",
+       shape = "Perception\nerror") +
+  annotate("text", x = 2.0, y = 0.15, label = "Overconfident\nregion",
+           size = 3, fontface = "italic", color = "grey40") +
+  annotate("text", x = 0.5, y = -0.15, label = "Underconfident\nregion",
+           size = 3, fontface = "italic", color = "grey40") +
+  theme_minimal(base_size = 12) +
+  theme(panel.grid.minor = element_blank(),
+        legend.position = c(0.15, 0.85),
+        legend.background = element_rect(fill = "white", color = NA))
+```
+
+**Key findings:**
+
+-   When $r/c$ is low (resources aren't worth fighting over), *underconfidence* evolves — agents avoid costly conflicts.
+-   When $r/c$ is high, *overconfidence* evolves — the expected gain from claiming uncontested resources outweighs the cost of losing conflicts.
+-   More perception error ($e$) amplifies the bias in both directions.
+
+**Exercise:** What happens if you increase the population size to 200? Does the equilibrium $k^*$ change, or just the speed of convergence?
+
+------------------------------------------------------------------------
+
+# Summary
+
+| Simulation | Key Takeaway |
+|----|----|
+| **Stag Hunt** | The MSNE ($s = 2/3$) is the basin boundary — evolution selects *between* equilibria based on initial conditions |
+| **Mini-Ultimatum** | The SPE (Greedy, Accept) is the only attractor without drift; experimentation can stabilize fairness |
+| **Overconfidence** | Natural selection favors overconfidence when resources are valuable relative to conflict costs |
+
+All three simulations illustrate the same core idea: evolutionary dynamics give us a *selection criterion* among equilibria that Nash equilibrium alone cannot provide.

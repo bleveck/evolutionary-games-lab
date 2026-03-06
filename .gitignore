@@ -1,0 +1,11 @@
+# R / RStudio
+.Rhistory
+.Rdata
+.RData
+.Rproj.user/
+*_cache/
+*_files/
+
+# Compiled output (regenerate by knitting the Rmd)
+evolutionary_games_lab.html
+evolutionary_games_lab.knit.md
