@@ -69,7 +69,7 @@ make_phase(delta_P = 0, delta_R = 0)
 
 ![Standard replicator](figures/ultimatum_standard.png)
 
-All trajectories converge to (Greedy, Accept) — the subgame perfect equilibrium.
+Above the $a = 2/3$ nullcline, trajectories converge to (Greedy, Accept) — the SPE. Below it, trajectories move rightward and can be absorbed onto the $f = 1$ boundary, which is a line of rest points. These boundary equilibria are fragile (any perturbation restarts dynamics), motivating the drift model below.
 
 ### With drift (experimentation)
 
@@ -129,7 +129,7 @@ When resources are valuable ($r/c$ high), overconfidence pays off — you claim 
 | Simulation | Key Takeaway |
 |---|---|
 | **Stag Hunt** | The MSNE is the basin boundary — evolution selects *between* equilibria based on initial conditions |
-| **Mini-Ultimatum** | The SPE (Greedy, Accept) is the only attractor without drift; experimentation can stabilize fairness |
+| **Mini-Ultimatum** | The SPE is the only asymptotically stable equilibrium without drift; the $f = 1$ boundary also absorbs trajectories but is fragile. Drift eliminates boundary rest points and can stabilize fairness |
 | **Overconfidence** | Natural selection favors overconfidence when resources are valuable relative to conflict costs |
 
 ## References
